@@ -1,0 +1,10 @@
+{
+  "description": "Discover and explore curated advertising campaigns with detailed breakdowns, carousels, podcasts, and brand case studies in a sleek dark-themed UI.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

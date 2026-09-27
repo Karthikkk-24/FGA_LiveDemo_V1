@@ -4,7 +4,6 @@ import {
   Search,
   Edit3,
   Trash2,
-  ExternalLink,
   Eye,
   Calendar,
   Clock,
@@ -14,18 +13,21 @@ import {
   CheckCircle2,
   FileText,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  LogOut,
 } from 'lucide-react'
 import { Article } from '../types'
 
 interface AdminDashboardProps {
   articles: Article[]
+  adminUsername?: string
   onCreatePost: () => void
   onEditPost: (articleId: string) => void
   onDeletePost: (articleId: string) => void
   onViewPost: (articleId: string) => void
   onBackToSite: () => void
   onResetDefaults: () => void
+  onLogout: () => void
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -38,12 +40,14 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export function AdminDashboard({
   articles,
+  adminUsername,
   onCreatePost,
   onEditPost,
   onDeletePost,
   onViewPost,
   onBackToSite,
   onResetDefaults,
+  onLogout,
 }: AdminDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
@@ -111,6 +115,12 @@ export function AdminDashboard({
           </div>
 
           <div className="flex items-center gap-3">
+            {adminUsername && (
+              <span className="hidden md:inline font-mono text-xs text-[#777]">
+                Signed in as <span className="text-[#ccc]">{adminUsername}</span>
+              </span>
+            )}
+
             <button
               onClick={() => setConfirmResetModal(true)}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono text-[#888] hover:text-white bg-[#1A1A1A] hover:bg-[#222] border border-[#262626] transition-all cursor-pointer"
@@ -118,6 +128,15 @@ export function AdminDashboard({
             >
               <RotateCcw size={12} />
               <span>Reset Defaults</span>
+            </button>
+
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono text-[#888] hover:text-red-400 bg-[#1A1A1A] hover:bg-red-500/10 border border-[#262626] hover:border-red-500/30 transition-all cursor-pointer"
+              title="Sign out of CMS"
+            >
+              <LogOut size={12} />
+              <span className="hidden sm:inline">Logout</span>
             </button>
 
             <button

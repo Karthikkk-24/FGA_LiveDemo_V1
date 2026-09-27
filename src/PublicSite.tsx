@@ -20,6 +20,40 @@ const FALLBACK_CATEGORY_COLORS: Record<string, string> = {
   Brands:    '#FF3B00',
 }
 
+function matchesCategory(article: Article, activeCategory: string): boolean {
+  if (activeCategory === 'All') return true
+  return (article.category || '').trim().toLowerCase() === activeCategory.trim().toLowerCase()
+}
+
+function matchesSearch(article: Article, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const haystack = [
+    article.title,
+    article.summary,
+    article.category,
+    ...(article.tags || []),
+    ...(article.keyTakeaways || []),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(q)
+}
+
+function filterArticles(
+  articles: Article[],
+  activeCategory: string,
+  activeTag: string,
+  searchQuery: string
+): Article[] {
+  return articles.filter(
+    (a) =>
+      matchesCategory(a, activeCategory) &&
+      (activeTag === 'All' || articleHasTag(a, activeTag)) &&
+      matchesSearch(a, searchQuery)
+  )
+}
+
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
 function CategoryTag({ label, color }: { label: string; color?: string }) {
@@ -42,12 +76,16 @@ function Header({
   menuOpen,
   setMenuOpen,
   onResetToHome,
+  searchQuery,
+  setSearchQuery,
 }: {
   menuOpen: boolean
   setMenuOpen: (v: boolean) => void
   onResetToHome: () => void
+  searchQuery: string
+  setSearchQuery: (v: string) => void
 }) {
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(Boolean(searchQuery))
 
   return (
     <header
@@ -61,12 +99,13 @@ function Header({
       <div className="max-w-7xl mx-auto px-5 lg:px-8 h-15 flex items-center gap-6" style={{ height: '60px' }}>
         {/* Logo */}
         <button
+          type="button"
           onClick={onResetToHome}
           className="flex items-center gap-2.5 flex-shrink-0 cursor-pointer bg-transparent border-0 text-left focus:outline-none"
         >
-          <img 
-            src="/assets/FGA%20logo%20transparent%20whiteorange.png" 
-            alt="FGA Logo" 
+          <img
+            src="/assets/FGA%20logo%20transparent%20whiteorange.png"
+            alt="FGA Logo"
             className="w-7 h-7 object-contain"
           />
           <span
@@ -94,24 +133,46 @@ function Header({
 
         {/* Search */}
         <div className="hidden md:flex items-center">
-          {searchOpen ? (
+          {searchOpen || searchQuery ? (
             <div
-              className="flex items-center gap-2 px-3 py-2 w-52 rounded-sm"
+              className="flex items-center gap-2 px-3 py-2 w-56 rounded-sm"
               style={{ background: '#1A1A1A', border: '1px solid #252525' }}
             >
               <Search size={13} color="#606060" />
               <input
-                autoFocus
+                autoFocus={!searchQuery}
                 type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search campaigns..."
                 className="bg-transparent text-sm text-white placeholder-gray-700 outline-none w-full"
-                onBlur={() => setSearchOpen(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchQuery('')
+                    setSearchOpen(false)
+                  }
+                }}
               />
+              {(searchQuery || searchOpen) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setSearchOpen(false)
+                  }}
+                  className="text-[#666] hover:text-white cursor-pointer"
+                  aria-label="Clear search"
+                >
+                  <X size={13} />
+                </button>
+              )}
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => setSearchOpen(true)}
               className="p-2 rounded-sm text-gray-500 hover:text-gray-300 transition-colors cursor-pointer"
+              aria-label="Search"
             >
               <Search size={15} />
             </button>
@@ -120,6 +181,7 @@ function Header({
 
         {/* Hamburger */}
         <button
+          type="button"
           onClick={() => setMenuOpen(!menuOpen)}
           className="p-2 rounded-sm text-gray-500 hover:text-gray-300 transition-colors md:hidden cursor-pointer"
         >
@@ -131,6 +193,19 @@ function Header({
       {menuOpen && (
         <div className="md:hidden" style={{ borderTop: '1px solid #1e1e1e', background: '#121212' }}>
           <div className="max-w-7xl mx-auto px-5 py-5 flex flex-col gap-4">
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-sm"
+              style={{ background: '#1A1A1A', border: '1px solid #252525' }}
+            >
+              <Search size={13} color="#606060" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search campaigns..."
+                className="bg-transparent text-sm text-white placeholder-gray-700 outline-none w-full"
+              />
+            </div>
             <a
               href="#breakdowns"
               className="text-sm font-medium py-1"
@@ -156,24 +231,10 @@ function Header({
 
 function HeroSection({
   heroArticle,
-  categories,
-  tags,
-  activeCategory,
-  setActiveCategory,
-  activeTag,
-  setActiveTag,
   onSelectArticle,
-  totalResultsCount,
 }: {
   heroArticle: Article
-  categories: string[]
-  tags: string[]
-  activeCategory: string
-  setActiveCategory: (v: string) => void
-  activeTag: string
-  setActiveTag: (v: string) => void
   onSelectArticle: (slug: string) => void
-  totalResultsCount: number
 }) {
   return (
     <section className="max-w-7xl mx-auto px-5 lg:px-8 pt-10 pb-6">
@@ -215,14 +276,15 @@ function HeroSection({
             </p>
           </div>
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onSelectArticle(heroArticle.id)
             }}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm text-sm font-medium text-white self-start transition-colors cursor-pointer"
             style={{ background: '#FF3B00' }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#e03400')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#FF3B00')}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#e03400')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#FF3B00')}
           >
             <Clock size={12} />
             {heroArticle.readTime}
@@ -245,62 +307,110 @@ function HeroSection({
           <div className="absolute bottom-4 right-4">
             <span
               className="tag-chip"
-              style={{ background: 'rgba(0,0,0,0.6)', color: '#ccc', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.08)' }}
+              style={{
+                background: 'rgba(0,0,0,0.6)',
+                color: '#ccc',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
             >
               {heroArticle.category} Breakdown
             </span>
           </div>
         </div>
       </div>
+    </section>
+  )
+}
 
-      {/* Category Filter */}
-      <div className="flex items-center gap-2 mt-5 flex-wrap">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className="tag-chip"
-            style={{
-              background: activeCategory === cat ? 'rgba(255,59,0,0.1)' : 'rgba(255,255,255,0.03)',
-              color: activeCategory === cat ? '#FF3B00' : '#686868',
-              border: `1px solid ${activeCategory === cat ? 'rgba(255,59,0,0.25)' : 'rgba(255,255,255,0.06)'}`,
-              cursor: 'pointer',
-              padding: '5px 13px',
-              transition: 'all 0.18s ease',
-            }}
-          >
-            {cat}
-          </button>
-        ))}
-        <div className="ml-auto hidden sm:flex items-center gap-1.5">
-          <span className="font-mono text-xs" style={{ color: '#555' }}>{totalResultsCount} campaigns</span>
-          <span className="font-mono text-xs" style={{ color: '#333' }}>·</span>
-          <span className="font-mono text-xs" style={{ color: '#555' }}>Dynamic CMS Enabled</span>
+function PublicFiltersBar({
+  categories,
+  tags,
+  activeCategory,
+  setActiveCategory,
+  activeTag,
+  setActiveTag,
+  resultCount,
+  totalCount,
+}: {
+  categories: string[]
+  tags: string[]
+  activeCategory: string
+  setActiveCategory: (v: string) => void
+  activeTag: string
+  setActiveTag: (v: string) => void
+  resultCount: number
+  totalCount: number
+}) {
+  const hasFilters = activeCategory !== 'All' || activeTag !== 'All'
+
+  return (
+    <section className="max-w-7xl mx-auto px-5 lg:px-8 pb-2">
+      <div
+        className="rounded-lg p-4"
+        style={{ background: '#1A1A1A', border: '1px solid #222' }}
+      >
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <p className="font-mono text-xs text-[#666] uppercase tracking-wider">Filter campaigns</p>
+          <p className="font-mono text-xs text-[#555]">
+            {resultCount}
+            {hasFilters ? ` of ${totalCount}` : ''} campaigns
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {categories.map((cat) => {
+            const active = activeCategory === cat
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setActiveCategory(cat)}
+                className="tag-chip cursor-pointer"
+                style={{
+                  background: active ? 'rgba(255,59,0,0.12)' : 'rgba(255,255,255,0.03)',
+                  color: active ? '#FF3B00' : '#686868',
+                  border: `1px solid ${active ? 'rgba(255,59,0,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                  padding: '6px 12px',
+                }}
+              >
+                {cat}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="flex items-center gap-2 min-w-0 sm:ml-auto">
+            <span className="font-mono text-[0.65rem] uppercase text-[#555] shrink-0">Tag</span>
+            <select
+              aria-label="Filter by tag"
+              value={activeTag}
+              onChange={(e) => setActiveTag(e.target.value)}
+              className="h-9 min-w-[160px] max-w-full px-3 rounded-md bg-[#141414] text-sm text-white border border-[#282828] focus:border-[#FF3B00] outline-none cursor-pointer"
+            >
+              {tags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag === 'All' ? 'All tags' : tag}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCategory('All')
+                setActiveTag('All')
+              }}
+              className="text-xs text-[#888] hover:text-[#FF3B00] cursor-pointer sm:shrink-0"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Tag Filter */}
-      {tags.length > 1 && (
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
-          {tags.slice(0, 16).map((tag) => (
-            <button
-              key={tag}
-              onClick={() => setActiveTag(tag)}
-              className="tag-chip"
-              style={{
-                background: activeTag === tag ? 'rgba(255,59,0,0.08)' : 'transparent',
-                color: activeTag === tag ? '#FF3B00' : '#555',
-                border: `1px solid ${activeTag === tag ? 'rgba(255,59,0,0.22)' : 'rgba(255,255,255,0.05)'}`,
-                cursor: 'pointer',
-                padding: '4px 10px',
-                fontSize: '0.68rem',
-              }}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-      )}
     </section>
   )
 }
@@ -417,21 +527,13 @@ function CarouselsSection({
 
 function BreakdownsGrid({
   articles,
-  activeCategory,
-  activeTag,
   onSelectArticle,
+  isFiltered,
 }: {
   articles: Article[]
-  activeCategory: string
-  activeTag: string
   onSelectArticle: (id: string) => void
+  isFiltered: boolean
 }) {
-  const filtered = articles.filter((b) => {
-    const matchesCategory = activeCategory === 'All' || b.category === activeCategory
-    const matchesTag = activeTag === 'All' || articleHasTag(b, activeTag)
-    return matchesCategory && matchesTag
-  })
-
   return (
     <section id="breakdowns" className="max-w-7xl mx-auto px-5 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-5">
@@ -441,64 +543,83 @@ function BreakdownsGrid({
             All Breakdowns
           </h2>
         </div>
+        <span className="font-mono text-xs text-[#555]">{articles.length} shown</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((card) => (
-          <article
-            key={card.id}
-            onClick={() => onSelectArticle(card.id)}
-            className="cursor-pointer group flex flex-col justify-between"
-            style={{
-              background: '#1A1A1A',
-              border: '1px solid #222',
-              borderRadius: '6px',
-              overflow: 'hidden',
-              boxShadow: '3px 3px 10px #0a0a0a',
-              transition: 'border-color 0.2s ease, transform 0.2s ease',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.borderColor = '#2e2e2e'
-              ;(e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.borderColor = '#222'
-              ;(e.currentTarget as HTMLElement).style.transform = 'translateY(0)'
-            }}
-          >
-            <div className="relative overflow-hidden" style={{ height: '175px', background: '#161616' }}>
-              <img
-                src={card.heroImage}
-                alt={card.title}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                style={{ filter: 'brightness(0.75)' }}
-              />
-            </div>
-            <div className="p-4 flex-1 flex flex-col justify-between">
-              <div>
-                <div className="mb-2.5">
-                  <CategoryTag label={card.category} />
-                </div>
-                <h3
-                  className="font-display text-white leading-snug mb-3 line-clamp-2 group-hover:text-[#FF3B00] transition-colors"
-                  style={{ fontSize: '1rem', fontWeight: 500 }}
-                >
-                  {card.title}
-                </h3>
+      {articles.length === 0 ? (
+        <div
+          className="rounded-lg px-6 py-14 text-center"
+          style={{ background: '#1A1A1A', border: '1px solid #222' }}
+        >
+          <p className="font-display text-white text-lg mb-2">
+            {isFiltered ? 'No campaigns match these filters' : 'No campaigns yet'}
+          </p>
+          <p className="text-sm text-[#777]">
+            {isFiltered
+              ? 'Try another category or tag, or clear filters.'
+              : 'Published posts from the CMS will appear here.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {articles.map((card) => (
+            <article
+              key={card.id}
+              onClick={() => onSelectArticle(card.id)}
+              className="cursor-pointer group flex flex-col justify-between"
+              style={{
+                background: '#1A1A1A',
+                border: '1px solid #222',
+                borderRadius: '6px',
+                overflow: 'hidden',
+                boxShadow: '3px 3px 10px #0a0a0a',
+                transition: 'border-color 0.2s ease, transform 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLElement).style.borderColor = '#2e2e2e'
+                ;(e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLElement).style.borderColor = '#222'
+                ;(e.currentTarget as HTMLElement).style.transform = 'translateY(0)'
+              }}
+            >
+              <div className="relative overflow-hidden" style={{ height: '175px', background: '#161616' }}>
+                <img
+                  src={card.heroImage}
+                  alt={card.title}
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  style={{ filter: 'brightness(0.75)' }}
+                />
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-[#222]">
-                <div className="flex items-center gap-1.5">
-                  <Clock size={11} color="#505050" />
-                  <span className="font-mono text-xs" style={{ color: '#505050' }}>{card.readTime}</span>
+              <div className="p-4 flex-1 flex flex-col justify-between">
+                <div>
+                  <div className="mb-2.5">
+                    <CategoryTag label={card.category} />
+                  </div>
+                  <h3
+                    className="font-display text-white leading-snug mb-3 line-clamp-2 group-hover:text-[#FF3B00] transition-colors"
+                    style={{ fontSize: '1rem', fontWeight: 500 }}
+                  >
+                    {card.title}
+                  </h3>
                 </div>
-                <span className="font-mono text-[0.7rem] text-[#666] group-hover:text-white transition-colors">
-                  Read →
-                </span>
+                <div className="flex items-center justify-between pt-2 border-t border-[#222]">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={11} color="#505050" />
+                    <span className="font-mono text-xs" style={{ color: '#505050' }}>
+                      {card.readTime}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[0.7rem] text-[#666] group-hover:text-white transition-colors">
+                    Read →
+                  </span>
+                </div>
               </div>
-            </div>
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -701,6 +822,7 @@ export function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeTag, setActiveTag] = useState('All')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Ignore legacy #admin hashes — public users must never land in CMS via hash
   useEffect(() => {
@@ -711,30 +833,54 @@ export function HomePage() {
   }, [])
 
   const publishedArticles = articlesList.filter(isPublished)
-  const heroArticle = (articles['nike-af1'] && isPublished(articles['nike-af1'])
-    ? articles['nike-af1']
-    : publishedArticles[0]) as Article | undefined
-  const carouselArticles = publishedArticles.filter((a) => a.slides && a.slides.length > 0)
+
+  // Only offer filters that actually have published posts
+  const usedCategories = Array.from(
+    new Set(publishedArticles.map((a) => a.category).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b))
 
   const categoryFilters = [
     'All',
     ...Array.from(
       new Set([
-        ...taxonomyCategories.map((c) => c.name),
-        ...publishedArticles.map((a) => a.category).filter(Boolean),
+        ...usedCategories,
+        // Keep taxonomy names that match a used category (for stable ordering via taxonomy)
+        ...taxonomyCategories.map((c) => c.name).filter((name) =>
+          usedCategories.some((u) => u.toLowerCase() === name.toLowerCase())
+        ),
       ])
     ).sort((a, b) => a.localeCompare(b)),
   ]
+
+  const usedTags = Array.from(
+    new Set(publishedArticles.flatMap((a) => (a.tags || []).map(normalizeTagName)).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b))
 
   const tagFilters = [
     'All',
     ...Array.from(
       new Set([
-        ...taxonomyTags.map((t) => normalizeTagName(t.name)),
-        ...publishedArticles.flatMap((a) => (a.tags || []).map(normalizeTagName)),
+        ...usedTags,
+        ...taxonomyTags
+          .map((t) => normalizeTagName(t.name))
+          .filter((name) => usedTags.some((u) => u.toLowerCase() === name.toLowerCase())),
       ])
     ).sort((a, b) => a.localeCompare(b)),
   ]
+
+  const filteredArticles = filterArticles(
+    publishedArticles,
+    activeCategory,
+    activeTag,
+    searchQuery
+  )
+  const carouselArticles = filteredArticles.filter((a) => a.slides && a.slides.length > 0)
+  const isFiltered =
+    activeCategory !== 'All' || activeTag !== 'All' || searchQuery.trim().length > 0
+
+  const heroArticle = (articles['nike-af1'] && isPublished(articles['nike-af1'])
+    ? articles['nike-af1']
+    : publishedArticles[0]) as Article | undefined
 
   const navigateToArticle = (id: string) => {
     navigate(`/article/${id}`)
@@ -742,6 +888,9 @@ export function HomePage() {
   }
 
   const navigateToHome = () => {
+    setActiveCategory('All')
+    setActiveTag('All')
+    setSearchQuery('')
     navigate('/')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -769,30 +918,31 @@ export function HomePage() {
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
         onResetToHome={navigateToHome}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
       />
       <main>
         {heroArticle && (
-          <HeroSection
-            heroArticle={heroArticle}
-            categories={categoryFilters}
-            tags={tagFilters}
-            activeCategory={activeCategory}
-            setActiveCategory={setActiveCategory}
-            activeTag={activeTag}
-            setActiveTag={setActiveTag}
-            onSelectArticle={navigateToArticle}
-            totalResultsCount={publishedArticles.length}
-          />
+          <HeroSection heroArticle={heroArticle} onSelectArticle={navigateToArticle} />
         )}
+        <PublicFiltersBar
+          categories={categoryFilters}
+          tags={tagFilters}
+          activeCategory={activeCategory}
+          setActiveCategory={setActiveCategory}
+          activeTag={activeTag}
+          setActiveTag={setActiveTag}
+          resultCount={filteredArticles.length}
+          totalCount={publishedArticles.length}
+        />
         <CarouselsSection
           carouselArticles={carouselArticles}
           onSelectArticle={navigateToArticle}
         />
         <BreakdownsGrid
-          articles={publishedArticles}
-          activeCategory={activeCategory}
-          activeTag={activeTag}
+          articles={filteredArticles}
           onSelectArticle={navigateToArticle}
+          isFiltered={isFiltered}
         />
         <NewsletterBox />
         <GetFeaturedBanner />

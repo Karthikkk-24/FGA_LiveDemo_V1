@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AdminAuthProvider } from './auth/AdminAuthContext'
 import { ArticlesProvider } from './articleStorage'
+import { TaxonomyProvider } from './taxonomyStorage'
 import { AdminLogin } from './admin/AdminLogin'
 import { RequireAdminAuth } from './admin/RequireAdminAuth'
 import { HomePage, PublicArticlePage } from './PublicSite'
@@ -53,6 +54,7 @@ export default function App() {
     <BrowserRouter basename={routerBasename()}>
       <AdminAuthProvider>
         <ArticlesProvider>
+          <TaxonomyProvider>
           <LegacyHashRedirect />
           <Routes>
             {/* Public site — no login, no admin chrome */}
@@ -76,6 +78,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </TaxonomyProvider>
         </ArticlesProvider>
       </AdminAuthProvider>
     </BrowserRouter>

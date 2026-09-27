@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Plus,
   Search,
@@ -8,15 +8,18 @@ import {
   Calendar,
   Clock,
   Sparkles,
-  ArrowLeft,
-  Filter,
   CheckCircle2,
   FileText,
   AlertTriangle,
   RotateCcw,
   LogOut,
+  Tags,
+  MoreHorizontal,
+  ExternalLink,
 } from 'lucide-react'
 import { Article } from '../types'
+import { useTaxonomy } from '../taxonomyStorage'
+import { articleHasTag, normalizeTagName } from '../taxonomy'
 
 interface AdminDashboardProps {
   articles: Article[]
@@ -27,6 +30,7 @@ interface AdminDashboardProps {
   onEditPost: (articleId: string) => void
   onDeletePost: (articleId: string) => void | Promise<void>
   onViewPost: (articleId: string) => void
+  onManageTaxonomy: () => void
   onBackToSite: () => void
   onResetDefaults: () => void | Promise<void>
   onLogout: () => void | Promise<void>
@@ -49,17 +53,50 @@ export function AdminDashboard({
   onEditPost,
   onDeletePost,
   onViewPost,
+  onManageTaxonomy,
   onBackToSite,
   onResetDefaults,
   onLogout,
 }: AdminDashboardProps) {
+  const { categories: taxonomyCategories, tags: taxonomyTags } = useTaxonomy()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
+  const [selectedTag, setSelectedTag] = useState<string>('All')
   const [deleteModalArticle, setDeleteModalArticle] = useState<Article | null>(null)
   const [confirmResetModal, setConfirmResetModal] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  // Extract unique categories
-  const categories = ['All', ...Array.from(new Set(articles.map((a) => a.category).filter(Boolean)))]
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [menuOpen])
+
+  const categories = [
+    'All',
+    ...Array.from(
+      new Set([
+        ...taxonomyCategories.map((c) => c.name),
+        ...articles.map((a) => a.category).filter(Boolean),
+      ])
+    ).sort((a, b) => a.localeCompare(b)),
+  ]
+
+  const tagOptions = [
+    'All',
+    ...Array.from(
+      new Set([
+        ...taxonomyTags.map((t) => normalizeTagName(t.name)),
+        ...articles.flatMap((a) => (a.tags || []).map(normalizeTagName)),
+      ])
+    ).sort((a, b) => a.localeCompare(b)),
+  ]
 
   // Filter articles
   const filteredArticles = articles.filter((a) => {
@@ -68,7 +105,8 @@ export function AdminDashboard({
       a.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
       a.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()))
     const matchesCategory = selectedCategory === 'All' || a.category === selectedCategory
-    return matchesSearch && matchesCategory
+    const matchesTag = selectedTag === 'All' || articleHasTag(a, selectedTag)
+    return matchesSearch && matchesCategory && matchesTag
   })
 
   // Summary counts
@@ -83,6 +121,9 @@ export function AdminDashboard({
     }
   }
 
+  const hasActiveFilters =
+    searchQuery.trim() !== '' || selectedCategory !== 'All' || selectedTag !== 'All'
+
   return (
     <div className="min-h-screen bg-[#121212] text-white">
       {/* ─── Top Admin Bar ────────────────────────────────────────── */}
@@ -94,61 +135,106 @@ export function AdminDashboard({
           borderBottom: '1px solid #222',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onBackToSite}
-              className="flex items-center gap-2 text-xs sm:text-sm font-medium text-[#A0A0A0] hover:text-[#FF3B00] px-3 py-1.5 rounded transition-all hover:bg-[#1A1A1A] border border-transparent hover:border-[#282828] cursor-pointer"
-            >
-              <ArrowLeft size={15} />
-              <span>Live Website</span>
-            </button>
-
-            <div className="h-4 w-[1px] bg-[#2A2A2A]" />
-
-            <div className="flex items-center gap-2.5">
-              <img
-                src="/assets/FGA%20logo%20transparent%20whiteorange.png"
-                alt="FGA Logo"
-                className="w-6 h-6 object-contain"
-              />
-              <span className="font-display font-semibold text-white tracking-tight text-base sm:text-lg">
-                CMS Studio <span className="text-[#FF3B00] font-mono text-xs font-normal">v2.0</span>
-              </span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-3">
+          {/* Brand */}
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/assets/FGA%20logo%20transparent%20whiteorange.png"
+              alt="FGA Logo"
+              className="w-7 h-7 object-contain flex-shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="font-display font-semibold text-white tracking-tight text-base leading-tight">
+                CMS Studio
+              </div>
+              {adminUsername && (
+                <div className="font-mono text-[0.65rem] text-[#666] truncate max-w-[180px] sm:max-w-[240px]">
+                  {adminUsername}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {adminUsername && (
-              <span className="hidden md:inline font-mono text-xs text-[#777]">
-                Signed in as <span className="text-[#ccc]">{adminUsername}</span>
-              </span>
-            )}
-
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => setConfirmResetModal(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono text-[#888] hover:text-white bg-[#1A1A1A] hover:bg-[#222] border border-[#262626] transition-all cursor-pointer"
-              title="Reset sample articles to default"
+              onClick={onBackToSite}
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-[#888] hover:text-white hover:bg-[#1A1A1A] transition-colors cursor-pointer"
+              title="Open live website"
             >
-              <RotateCcw size={12} />
-              <span>Reset Defaults</span>
+              <ExternalLink size={14} />
+              <span>Site</span>
             </button>
 
-            <button
-              onClick={onLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono text-[#888] hover:text-red-400 bg-[#1A1A1A] hover:bg-red-500/10 border border-[#262626] hover:border-red-500/30 transition-all cursor-pointer"
-              title="Sign out of CMS"
-            >
-              <LogOut size={12} />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen((o) => !o)}
+                className="inline-flex items-center justify-center w-9 h-9 rounded text-[#888] hover:text-white hover:bg-[#1A1A1A] border border-[#262626] transition-colors cursor-pointer"
+                aria-label="More actions"
+                aria-expanded={menuOpen}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+              {menuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-52 rounded-lg py-1.5 z-50"
+                  style={{
+                    background: '#1A1A1A',
+                    border: '1px solid #2A2A2A',
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onBackToSite()
+                    }}
+                    className="sm:hidden w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs text-[#ccc] hover:bg-[#222] cursor-pointer"
+                  >
+                    <ExternalLink size={14} className="text-[#777]" />
+                    Live website
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onManageTaxonomy()
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs text-[#ccc] hover:bg-[#222] cursor-pointer"
+                  >
+                    <Tags size={14} className="text-[#777]" />
+                    Categories & Tags
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setConfirmResetModal(true)
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs text-[#ccc] hover:bg-[#222] cursor-pointer"
+                  >
+                    <RotateCcw size={14} className="text-[#777]" />
+                    Reset defaults
+                  </button>
+                  <div className="my-1.5 h-px bg-[#2A2A2A]" />
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false)
+                      void onLogout()
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-xs text-red-400 hover:bg-red-500/10 cursor-pointer"
+                  >
+                    <LogOut size={14} />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={onCreatePost}
-              className="flex items-center gap-2 px-4 py-2 rounded font-semibold text-xs sm:text-sm text-white bg-[#FF3B00] hover:bg-[#e03400] transition-all shadow-[0_0_15px_rgba(255,59,0,0.35)] cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-md font-semibold text-xs sm:text-sm text-white bg-[#FF3B00] hover:bg-[#e03400] transition-colors cursor-pointer"
             >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>Create New Post</span>
+              <Plus size={15} strokeWidth={2.5} />
+              <span>New Post</span>
             </button>
           </div>
         </div>
@@ -222,61 +308,76 @@ export function AdminDashboard({
           </div>
         </div>
 
-        {/* ─── Search & Category Filter Bar ─────────────────────────── */}
+        {/* ─── Search & Filters ─────────────────────────────────────── */}
         <div
-          className="p-4 sm:p-5 rounded-xl mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
+          className="p-4 rounded-xl mb-6"
           style={{
             background: '#1E1E1E',
             border: '1px solid #2A2A2A',
-            boxShadow: '4px 4px 12px #0a0a0a, -2px -2px 8px #222222',
           }}
         >
-          {/* Search Box */}
-          <div className="relative flex-1 max-w-md">
-            <Search
-              size={16}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#777]"
-            />
-            <input
-              type="text"
-              placeholder="Search by title, summary, or #tag..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded bg-[#141414] text-sm text-white placeholder-neutral-500 border border-[#282828] focus:border-[#FF3B00] outline-none transition-colors"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#777] hover:text-white"
-              >
-                Clear
-              </button>
-            )}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="relative flex-1 min-w-0">
+              <Search
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#777] pointer-events-none"
+              />
+              <input
+                type="text"
+                placeholder="Search posts…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-10 pl-10 pr-4 rounded-md bg-[#141414] text-sm text-white placeholder-neutral-500 border border-[#282828] focus:border-[#FF3B00] outline-none transition-colors"
+              />
+            </div>
+
+            <select
+              aria-label="Category"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="h-10 w-full sm:w-[180px] px-3 rounded-md bg-[#141414] text-sm text-white border border-[#282828] focus:border-[#FF3B00] outline-none cursor-pointer shrink-0"
+            >
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat === 'All' ? 'All categories' : cat}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Tag"
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+              className="h-10 w-full sm:w-[180px] px-3 rounded-md bg-[#141414] text-sm text-white border border-[#282828] focus:border-[#FF3B00] outline-none cursor-pointer shrink-0"
+            >
+              {tagOptions.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag === 'All' ? 'All tags' : tag}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scroll-hide">
-            <Filter size={14} className="text-[#666] mr-1 hidden sm:inline flex-shrink-0" />
-            {categories.map((cat) => {
-              const active = selectedCategory === cat
-              const color = CATEGORY_COLORS[cat] || '#FF3B00'
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className="px-3 py-1.5 rounded text-xs font-mono transition-all flex-shrink-0 cursor-pointer"
-                  style={{
-                    backgroundColor: active ? (cat === 'All' ? '#FF3B00' : color) : '#141414',
-                    color: active ? '#ffffff' : '#A0A0A0',
-                    border: `1px solid ${active ? 'transparent' : '#282828'}`,
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  {cat}
-                </button>
-              )
-            })}
-          </div>
+          {hasActiveFilters && (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-[#777] font-mono">
+                Showing {filteredArticles.length} of {articles.length}
+                {selectedCategory !== 'All' ? ` · ${selectedCategory}` : ''}
+                {selectedTag !== 'All' ? ` · ${selectedTag}` : ''}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setSelectedCategory('All')
+                  setSelectedTag('All')
+                }}
+                className="text-xs text-[#888] hover:text-[#FF3B00] cursor-pointer"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ─── Articles Table / Card List ────────────────────────────── */}

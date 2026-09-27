@@ -9,6 +9,7 @@ import { useAdminAuth } from '../auth/AdminAuthContext'
 import { Article } from '../types'
 import { ArticlePage } from '../ArticlePage'
 import { AdminDashboard } from './AdminDashboard'
+import { AdminTaxonomy } from './AdminTaxonomy'
 import { PostEditor } from './PostEditor'
 
 function AdminDashboardPage() {
@@ -38,6 +39,7 @@ function AdminDashboardPage() {
         }
       }}
       onViewPost={(id) => navigate(`/admin/view/${id}`)}
+      onManageTaxonomy={() => navigate('/admin/taxonomy')}
       onBackToSite={() => navigate('/')}
       onResetDefaults={async () => {
         try {
@@ -197,11 +199,17 @@ function AdminViewPage() {
   )
 }
 
+function AdminTaxonomyPage() {
+  const navigate = useNavigate()
+  return <AdminTaxonomy onBack={() => navigate('/admin')} />
+}
+
 export function AdminApp() {
   return (
     <Routes>
       <Route index element={<AdminDashboardPage />} />
       <Route path="posts" element={<Navigate to="/admin" replace />} />
+      <Route path="taxonomy" element={<AdminTaxonomyPage />} />
       <Route path="editor" element={<AdminEditorPage />} />
       <Route path="editor/:articleId" element={<AdminEditorPage />} />
       <Route path="preview" element={<AdminPreviewPage />} />

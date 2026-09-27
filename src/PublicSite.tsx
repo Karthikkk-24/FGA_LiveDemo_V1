@@ -5,14 +5,14 @@ import {
   Play, Clock, Mail
 } from 'lucide-react'
 import { useArticles } from './articleStorage'
+import { useTaxonomy } from './taxonomyStorage'
+import { articleHasTag, normalizeTagName } from './taxonomy'
 import { ArticlePage } from './ArticlePage'
 import { Article } from './types'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const CATEGORIES = ['All', 'Celebrity', 'Business', 'Sports', 'PR Stunt', 'Brands']
-
-const CATEGORY_COLORS: Record<string, string> = {
+const FALLBACK_CATEGORY_COLORS: Record<string, string> = {
   Celebrity: '#9333EA',
   Business:  '#0EA5E9',
   Sports:    '#22C55E',
@@ -22,15 +22,15 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
-function CategoryTag({ label }: { label: string }) {
-  const color = CATEGORY_COLORS[label] || '#FF3B00'
+function CategoryTag({ label, color }: { label: string; color?: string }) {
+  const resolved = color || FALLBACK_CATEGORY_COLORS[label] || '#FF3B00'
   return (
     <span
       className="tag-chip"
       style={{
-        backgroundColor: `${color}12`,
-        color,
-        border: `1px solid ${color}22`,
+        backgroundColor: `${resolved}12`,
+        color: resolved,
+        border: `1px solid ${resolved}22`,
       }}
     >
       {label}
@@ -156,14 +156,22 @@ function Header({
 
 function HeroSection({
   heroArticle,
+  categories,
+  tags,
   activeCategory,
   setActiveCategory,
+  activeTag,
+  setActiveTag,
   onSelectArticle,
   totalResultsCount,
 }: {
   heroArticle: Article
+  categories: string[]
+  tags: string[]
   activeCategory: string
   setActiveCategory: (v: string) => void
+  activeTag: string
+  setActiveTag: (v: string) => void
   onSelectArticle: (slug: string) => void
   totalResultsCount: number
 }) {
@@ -247,7 +255,7 @@ function HeroSection({
 
       {/* Category Filter */}
       <div className="flex items-center gap-2 mt-5 flex-wrap">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
@@ -270,6 +278,29 @@ function HeroSection({
           <span className="font-mono text-xs" style={{ color: '#555' }}>Dynamic CMS Enabled</span>
         </div>
       </div>
+
+      {/* Tag Filter */}
+      {tags.length > 1 && (
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          {tags.slice(0, 16).map((tag) => (
+            <button
+              key={tag}
+              onClick={() => setActiveTag(tag)}
+              className="tag-chip"
+              style={{
+                background: activeTag === tag ? 'rgba(255,59,0,0.08)' : 'transparent',
+                color: activeTag === tag ? '#FF3B00' : '#555',
+                border: `1px solid ${activeTag === tag ? 'rgba(255,59,0,0.22)' : 'rgba(255,255,255,0.05)'}`,
+                cursor: 'pointer',
+                padding: '4px 10px',
+                fontSize: '0.68rem',
+              }}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -387,15 +418,19 @@ function CarouselsSection({
 function BreakdownsGrid({
   articles,
   activeCategory,
+  activeTag,
   onSelectArticle,
 }: {
   articles: Article[]
   activeCategory: string
+  activeTag: string
   onSelectArticle: (id: string) => void
 }) {
-  const filtered = activeCategory === 'All'
-    ? articles
-    : articles.filter(b => b.category === activeCategory)
+  const filtered = articles.filter((b) => {
+    const matchesCategory = activeCategory === 'All' || b.category === activeCategory
+    const matchesTag = activeTag === 'All' || articleHasTag(b, activeTag)
+    return matchesCategory && matchesTag
+  })
 
   return (
     <section id="breakdowns" className="max-w-7xl mx-auto px-5 lg:px-8 py-8">
@@ -661,9 +696,11 @@ function isPublished(article: Article): boolean {
 
 export function HomePage() {
   const { articles, articlesList, loading, error } = useArticles()
+  const { categories: taxonomyCategories, tags: taxonomyTags } = useTaxonomy()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
+  const [activeTag, setActiveTag] = useState('All')
 
   // Ignore legacy #admin hashes — public users must never land in CMS via hash
   useEffect(() => {
@@ -678,6 +715,26 @@ export function HomePage() {
     ? articles['nike-af1']
     : publishedArticles[0]) as Article | undefined
   const carouselArticles = publishedArticles.filter((a) => a.slides && a.slides.length > 0)
+
+  const categoryFilters = [
+    'All',
+    ...Array.from(
+      new Set([
+        ...taxonomyCategories.map((c) => c.name),
+        ...publishedArticles.map((a) => a.category).filter(Boolean),
+      ])
+    ).sort((a, b) => a.localeCompare(b)),
+  ]
+
+  const tagFilters = [
+    'All',
+    ...Array.from(
+      new Set([
+        ...taxonomyTags.map((t) => normalizeTagName(t.name)),
+        ...publishedArticles.flatMap((a) => (a.tags || []).map(normalizeTagName)),
+      ])
+    ).sort((a, b) => a.localeCompare(b)),
+  ]
 
   const navigateToArticle = (id: string) => {
     navigate(`/article/${id}`)
@@ -717,8 +774,12 @@ export function HomePage() {
         {heroArticle && (
           <HeroSection
             heroArticle={heroArticle}
+            categories={categoryFilters}
+            tags={tagFilters}
             activeCategory={activeCategory}
             setActiveCategory={setActiveCategory}
+            activeTag={activeTag}
+            setActiveTag={setActiveTag}
             onSelectArticle={navigateToArticle}
             totalResultsCount={publishedArticles.length}
           />
@@ -730,6 +791,7 @@ export function HomePage() {
         <BreakdownsGrid
           articles={publishedArticles}
           activeCategory={activeCategory}
+          activeTag={activeTag}
           onSelectArticle={navigateToArticle}
         />
         <NewsletterBox />

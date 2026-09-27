@@ -46,7 +46,11 @@ export function PostEditor({
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEditing)
   const [summary, setSummary] = useState(initialArticle?.summary || '')
   const [category, setCategory] = useState(initialArticle?.category || 'PR Stunt')
-  const [customCategory, setCustomCategory] = useState('')
+  const [customCategory, setCustomCategory] = useState(
+    initialArticle?.category && !PRESET_CATEGORIES.includes(initialArticle.category)
+      ? initialArticle.category
+      : ''
+  )
   const [isCustomCategory, setIsCustomCategory] = useState(
     Boolean(initialArticle?.category && !PRESET_CATEGORIES.includes(initialArticle.category))
   )
@@ -197,13 +201,26 @@ export function PostEditor({
       slides: slides.filter((s) => s.title.trim()),
       content: {
         intro: introText.split('\n\n').map((p) => p.trim()).filter(Boolean),
-        sections: sections.filter((s) => s.heading.trim()),
+        sections: sections
+          .filter((s) => s.heading.trim())
+          .map((s) => ({
+            ...s,
+            quote: s.quote?.text?.trim()
+              ? { text: s.quote.text.trim(), author: s.quote.author?.trim() || 'Campaign Insider' }
+              : undefined,
+            image: s.image?.url?.trim()
+              ? { url: s.image.url.trim(), caption: s.image.caption?.trim() || '' }
+              : undefined,
+            callout: s.callout?.trim() || undefined,
+            subheading: s.subheading?.trim() || undefined,
+          })),
         conclusion: conclusion.trim(),
       },
     }
   }
 
   const handleSave = async (targetStatus: 'published' | 'draft') => {
+    setStatus(targetStatus)
     const article = constructArticle(targetStatus)
     await onSave(article)
   }
@@ -395,7 +412,7 @@ export function PostEditor({
                 URL Identifier / Slug <span className="text-[#FF3B00]">*</span>
               </label>
               <div className="flex items-center bg-[#141414] rounded border border-[#2A2A2A] px-3 py-2 text-xs font-mono text-[#666]">
-                <span>#article/</span>
+                <span>/article/</span>
                 <input
                   type="text"
                   value={slug}
@@ -423,7 +440,7 @@ export function PostEditor({
             </div>
           </div>
 
-          {/* Category Dropdown + Custom Category */}
+          {/* Category + Published Date (both always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
@@ -450,33 +467,33 @@ export function PostEditor({
               </select>
             </div>
 
-            {isCustomCategory ? (
-              <div>
-                <label className="block text-xs font-mono text-[#FF3B00] uppercase mb-1.5">
-                  Type Custom Category
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Growth Hacking"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#FF3B00]/40 focus:border-[#FF3B00] outline-none"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
-                  Published Date
-                </label>
-                <input
-                  type="text"
-                  value={publishedDate}
-                  onChange={(e) => setPublishedDate(e.target.value)}
-                  className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none"
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
+                Published Date
+              </label>
+              <input
+                type="text"
+                value={publishedDate}
+                onChange={(e) => setPublishedDate(e.target.value)}
+                className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none"
+              />
+            </div>
           </div>
+
+          {isCustomCategory && (
+            <div>
+              <label className="block text-xs font-mono text-[#FF3B00] uppercase mb-1.5">
+                Type Custom Category
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Growth Hacking"
+                value={customCategory}
+                onChange={(e) => setCustomCategory(e.target.value)}
+                className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#FF3B00]/40 focus:border-[#FF3B00] outline-none"
+              />
+            </div>
+          )}
 
           {/* Subtitle / Lead Hook */}
           <div>
@@ -890,6 +907,51 @@ export function PostEditor({
                     placeholder="e.g. Key Insight: Speed of cultural relevance consistently beats high-budget perfection."
                     className="w-full px-3 py-1.5 rounded bg-[#1F1F1F] text-xs text-neutral-200 border border-[#2A2A2A] outline-none"
                   />
+                </div>
+
+                {/* Optional Section Image */}
+                <div className="p-3.5 rounded bg-[#131313] border border-[#222] space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-mono text-[#888]">
+                    <ImageIcon size={13} className="text-[#FF3B00]" />
+                    <span>Section Image (Optional)</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={section.image?.url || ''}
+                    onChange={(e) =>
+                      handleUpdateSection(sIdx, {
+                        image: {
+                          url: e.target.value,
+                          caption: section.image?.caption || '',
+                        },
+                      })
+                    }
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full px-3 py-1.5 rounded bg-[#1B1B1B] text-xs text-white border border-[#282828] outline-none font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={section.image?.caption || ''}
+                    onChange={(e) =>
+                      handleUpdateSection(sIdx, {
+                        image: {
+                          url: section.image?.url || '',
+                          caption: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="Image caption"
+                    className="w-full px-3 py-1.5 rounded bg-[#1B1B1B] text-xs text-[#A0A0A0] border border-[#282828] outline-none"
+                  />
+                  {section.image?.url && (
+                    <div className="relative w-full aspect-video rounded overflow-hidden border border-[#262626] bg-[#141414]">
+                      <img
+                        src={section.image.url}
+                        alt={section.image.caption || 'Section preview'}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

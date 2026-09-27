@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AdminAuthProvider } from './auth/AdminAuthContext'
+import { ArticlesProvider } from './articleStorage'
 import { AdminLogin } from './admin/AdminLogin'
 import { RequireAdminAuth } from './admin/RequireAdminAuth'
 import { HomePage, PublicArticlePage } from './PublicSite'
@@ -51,29 +52,31 @@ export default function App() {
   return (
     <BrowserRouter basename={routerBasename()}>
       <AdminAuthProvider>
-        <LegacyHashRedirect />
-        <Routes>
-          {/* Public site — no login, no admin chrome */}
-          <Route path="/" element={<HomePage />} />
-          <Route path="/article/:articleId" element={<PublicArticlePage />} />
+        <ArticlesProvider>
+          <LegacyHashRedirect />
+          <Routes>
+            {/* Public site — no login, no admin chrome */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/article/:articleId" element={<PublicArticlePage />} />
 
-          {/* Dedicated admin login (unauthenticated) */}
-          <Route path="/admin/login" element={<AdminLogin />} />
+            {/* Dedicated admin login (unauthenticated) */}
+            <Route path="/admin/login" element={<AdminLogin />} />
 
-          {/* Protected CMS — lazy-loaded so public users never mount this UI */}
-          <Route
-            path="/admin/*"
-            element={
-              <RequireAdminAuth>
-                <Suspense fallback={<AdminChunkFallback />}>
-                  <AdminApp />
-                </Suspense>
-              </RequireAdminAuth>
-            }
-          />
+            {/* Protected CMS — lazy-loaded so public users never mount this UI */}
+            <Route
+              path="/admin/*"
+              element={
+                <RequireAdminAuth>
+                  <Suspense fallback={<AdminChunkFallback />}>
+                    <AdminApp />
+                  </Suspense>
+                </RequireAdminAuth>
+              }
+            />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ArticlesProvider>
       </AdminAuthProvider>
     </BrowserRouter>
   )

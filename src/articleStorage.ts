@@ -1,86 +1,125 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Article } from './types'
+import { useCallback, useEffect, useState } from 'react'
 import { ARTICLES } from './data'
+import { articleToRow, rowToArticle, supabase, type ArticleRow } from './lib/supabase'
+import type { Article } from './types'
 
-const STORAGE_KEY = 'fga_articles_v2'
-
-export function getStoredArticles(): Record<string, Article> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return parsed
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load articles from localStorage:', e)
+function rowsToMap(rows: ArticleRow[]): Record<string, Article> {
+  const map: Record<string, Article> = {}
+  for (const row of rows) {
+    map[row.id] = rowToArticle(row)
   }
-
-  // Default initial set
-  saveStoredArticles(ARTICLES)
-  return ARTICLES
+  return map
 }
-
-export function saveStoredArticles(articles: Record<string, Article>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(articles))
-  } catch (e) {
-    console.error('Failed to save articles to localStorage:', e)
-  }
-}
-
-// Global event target for cross-component sync
-const syncTarget = new EventTarget()
-const SYNC_EVENT = 'fga_articles_sync'
 
 export function useArticles() {
-  const [articles, setArticles] = useState<Record<string, Article>>(() => getStoredArticles())
+  const [articles, setArticles] = useState<Record<string, Article>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(() => {
-    setArticles(getStoredArticles())
+  const refresh = useCallback(async () => {
+    setError(null)
+    const { data, error: fetchError } = await supabase
+      .from('articles')
+      .select('*')
+      .order('updated_at', { ascending: false })
+
+    if (fetchError) {
+      console.error('Failed to load articles from Supabase:', fetchError)
+      setError(fetchError.message)
+      setLoading(false)
+      return
+    }
+
+    setArticles(rowsToMap((data || []) as ArticleRow[]))
+    setLoading(false)
   }, [])
 
   useEffect(() => {
-    const handler = () => refresh()
-    syncTarget.addEventListener(SYNC_EVENT, handler)
-    window.addEventListener('storage', handler)
+    void refresh()
+
+    const channel = supabase
+      .channel('articles-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'articles' },
+        () => {
+          void refresh()
+        }
+      )
+      .subscribe()
+
     return () => {
-      syncTarget.removeEventListener(SYNC_EVENT, handler)
-      window.removeEventListener('storage', handler)
+      void supabase.removeChannel(channel)
     }
   }, [refresh])
 
-  const saveArticle = useCallback((article: Article) => {
-    const current = getStoredArticles()
-    const updated = {
-      ...current,
-      [article.id]: {
+  // Re-fetch when auth session changes (drafts become visible after login)
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void refresh()
+    })
+    return () => subscription.unsubscribe()
+  }, [refresh])
+
+  const saveArticle = useCallback(
+    async (article: Article): Promise<Article> => {
+      const payload = articleToRow({
         ...article,
         status: article.status || 'published',
-      },
+      })
+
+      const { data, error: upsertError } = await supabase
+        .from('articles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('*')
+        .single()
+
+      if (upsertError) {
+        console.error('Failed to save article:', upsertError)
+        throw new Error(upsertError.message)
+      }
+
+      const saved = rowToArticle(data as ArticleRow)
+      setArticles((prev) => ({ ...prev, [saved.id]: saved }))
+      return saved
+    },
+    []
+  )
+
+  const deleteArticle = useCallback(async (articleId: string): Promise<void> => {
+    const { error: deleteError } = await supabase.from('articles').delete().eq('id', articleId)
+
+    if (deleteError) {
+      console.error('Failed to delete article:', deleteError)
+      throw new Error(deleteError.message)
     }
-    saveStoredArticles(updated)
-    syncTarget.dispatchEvent(new Event(SYNC_EVENT))
-    return article
+
+    setArticles((prev) => {
+      const next = { ...prev }
+      delete next[articleId]
+      return next
+    })
   }, [])
 
-  const deleteArticle = useCallback((articleId: string) => {
-    const current = getStoredArticles()
-    const updated = { ...current }
-    delete updated[articleId]
-    saveStoredArticles(updated)
-    syncTarget.dispatchEvent(new Event(SYNC_EVENT))
-  }, [])
+  const resetDefaults = useCallback(async (): Promise<void> => {
+    const rows = Object.values(ARTICLES).map(articleToRow)
+    const { error: upsertError } = await supabase.from('articles').upsert(rows, { onConflict: 'id' })
 
-  const resetDefaults = useCallback(() => {
-    saveStoredArticles(ARTICLES)
-    syncTarget.dispatchEvent(new Event(SYNC_EVENT))
-  }, [])
+    if (upsertError) {
+      console.error('Failed to reset defaults:', upsertError)
+      throw new Error(upsertError.message)
+    }
+
+    await refresh()
+  }, [refresh])
 
   return {
     articles,
     articlesList: Object.values(articles),
+    loading,
+    error,
     getArticle: (id: string) => articles[id] || null,
     saveArticle,
     deleteArticle,

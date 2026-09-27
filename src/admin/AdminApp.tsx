@@ -7,22 +7,36 @@ import { AdminDashboard } from './AdminDashboard'
 import { PostEditor } from './PostEditor'
 
 function AdminDashboardPage() {
-  const { articlesList, deleteArticle, resetDefaults } = useArticles()
-  const { logout, session } = useAdminAuth()
+  const { articlesList, loading, error, deleteArticle, resetDefaults } = useArticles()
+  const { logout, user } = useAdminAuth()
   const navigate = useNavigate()
 
   return (
     <AdminDashboard
       articles={articlesList}
-      adminUsername={session?.username}
+      loading={loading}
+      error={error}
+      adminUsername={user?.email || undefined}
       onCreatePost={() => navigate('/admin/editor')}
       onEditPost={(id) => navigate(`/admin/editor/${id}`)}
-      onDeletePost={(id) => deleteArticle(id)}
+      onDeletePost={async (id) => {
+        try {
+          await deleteArticle(id)
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'Failed to delete article')
+        }
+      }}
       onViewPost={(id) => navigate(`/article/${id}`)}
       onBackToSite={() => navigate('/')}
-      onResetDefaults={resetDefaults}
-      onLogout={() => {
-        logout()
+      onResetDefaults={async () => {
+        try {
+          await resetDefaults()
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'Failed to reset defaults')
+        }
+      }}
+      onLogout={async () => {
+        await logout()
         navigate('/admin/login', { replace: true })
       }}
     />
@@ -31,16 +45,42 @@ function AdminDashboardPage() {
 
 function AdminEditorPage() {
   const { articleId } = useParams<{ articleId?: string }>()
-  const { articles, saveArticle } = useArticles()
+  const { articles, loading, saveArticle } = useArticles()
   const navigate = useNavigate()
   const articleToEdit = articleId ? articles[articleId] ?? null : null
+
+  if (loading && articleId) {
+    return (
+      <div className="min-h-screen bg-[#121212] text-[#888] flex items-center justify-center font-mono text-sm">
+        Loading article…
+      </div>
+    )
+  }
+
+  if (articleId && !loading && !articleToEdit) {
+    return (
+      <div className="min-h-screen bg-[#121212] text-white flex flex-col items-center justify-center gap-4 px-4">
+        <h1 className="font-display text-2xl font-semibold">Article not found</h1>
+        <button
+          onClick={() => navigate('/admin')}
+          className="px-4 py-2 rounded text-sm font-semibold bg-[#FF3B00] hover:bg-[#e03400] cursor-pointer"
+        >
+          Back to CMS
+        </button>
+      </div>
+    )
+  }
 
   return (
     <PostEditor
       initialArticle={articleToEdit}
-      onSave={(article) => {
-        saveArticle(article)
-        navigate('/admin')
+      onSave={async (article) => {
+        try {
+          await saveArticle(article)
+          navigate('/admin')
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'Failed to save article')
+        }
       }}
       onCancel={() => navigate('/admin')}
       onPreview={(draft) => {

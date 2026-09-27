@@ -660,7 +660,7 @@ function isPublished(article: Article): boolean {
 }
 
 export function HomePage() {
-  const { articles, articlesList } = useArticles()
+  const { articles, articlesList, loading, error } = useArticles()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
@@ -687,6 +687,23 @@ export function HomePage() {
   const navigateToHome = () => {
     navigate('/')
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  if (loading && publishedArticles.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#121212] text-[#888] flex items-center justify-center font-mono text-sm">
+        Loading campaigns…
+      </div>
+    )
+  }
+
+  if (error && publishedArticles.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#121212] text-white flex flex-col items-center justify-center gap-3 px-4">
+        <h1 className="font-display text-xl font-semibold">Couldn’t load campaigns</h1>
+        <p className="text-sm text-[#888] text-center max-w-md">{error}</p>
+      </div>
+    )
   }
 
   return (
@@ -725,11 +742,19 @@ export function HomePage() {
 
 export function PublicArticlePage() {
   const { articleId } = useParams<{ articleId: string }>()
-  const { articles, articlesList } = useArticles()
+  const { articles, articlesList, loading } = useArticles()
   const navigate = useNavigate()
 
   const publishedArticles = articlesList.filter(isPublished)
   const article = articleId ? articles[articleId] : null
+
+  if (loading && !article) {
+    return (
+      <div className="min-h-screen bg-[#121212] text-[#888] flex items-center justify-center font-mono text-sm">
+        Loading article…
+      </div>
+    )
+  }
 
   if (!article || !isPublished(article)) {
     return (

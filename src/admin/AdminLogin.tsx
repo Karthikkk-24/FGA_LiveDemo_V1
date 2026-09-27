@@ -4,7 +4,7 @@ import { Lock, Shield, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { useAdminAuth } from '../auth/AdminAuthContext'
 
 export function AdminLogin() {
-  const { isAuthenticated, login } = useAdminAuth()
+  const { isAuthenticated, loading, login } = useAdminAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const from =
@@ -13,21 +13,29 @@ export function AdminLogin() {
       ? (location.state as { from: string }).from
       : '/admin'
 
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('admin@findinggoodads.com')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0c0c0c] text-[#888] flex items-center justify-center font-mono text-sm">
+        Checking session…
+      </div>
+    )
+  }
+
   if (isAuthenticated) {
     return <Navigate to={from} replace />
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
-    const result = login(username, password)
+    const result = await login(email, password)
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error)
@@ -59,20 +67,19 @@ export function AdminLogin() {
         </div>
 
         <p className="text-sm text-[#888] mb-6 leading-relaxed">
-          This area is for FGA editors only. There is no public signup — credentials are issued
-          privately.
+          Sign in with your Supabase admin account. There is no public signup.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-mono text-[#777] uppercase mb-1.5">Username</label>
+            <label className="block text-xs font-mono text-[#777] uppercase mb-1.5">Email</label>
             <input
-              type="text"
+              type="email"
               autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-2.5 rounded bg-[#101010] text-sm text-white border border-[#2a2a2a] focus:border-[#FF3B00] outline-none"
-              placeholder="Admin username"
+              placeholder="admin@findinggoodads.com"
               required
             />
           </div>

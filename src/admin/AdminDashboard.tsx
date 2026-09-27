@@ -20,14 +20,16 @@ import { Article } from '../types'
 
 interface AdminDashboardProps {
   articles: Article[]
+  loading?: boolean
+  error?: string | null
   adminUsername?: string
   onCreatePost: () => void
   onEditPost: (articleId: string) => void
-  onDeletePost: (articleId: string) => void
+  onDeletePost: (articleId: string) => void | Promise<void>
   onViewPost: (articleId: string) => void
   onBackToSite: () => void
-  onResetDefaults: () => void
-  onLogout: () => void
+  onResetDefaults: () => void | Promise<void>
+  onLogout: () => void | Promise<void>
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -40,6 +42,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export function AdminDashboard({
   articles,
+  loading = false,
+  error = null,
   adminUsername,
   onCreatePost,
   onEditPost,
@@ -72,9 +76,9 @@ export function AdminDashboard({
   const publishedCount = articles.filter((a) => (a.status || 'published') === 'published').length
   const draftCount = articles.filter((a) => a.status === 'draft').length
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (deleteModalArticle) {
-      onDeletePost(deleteModalArticle.id)
+      await onDeletePost(deleteModalArticle.id)
       setDeleteModalArticle(null)
     }
   }
@@ -152,6 +156,14 @@ export function AdminDashboard({
 
       {/* ─── Main Content ─────────────────────────────────────────── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            Failed to sync with database: {error}
+          </div>
+        )}
+        {loading && articles.length === 0 && (
+          <div className="mb-6 font-mono text-sm text-[#888]">Loading articles from Supabase…</div>
+        )}
         {/* Header Title & Intro */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
@@ -512,8 +524,8 @@ export function AdminDashboard({
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  onResetDefaults()
+                onClick={async () => {
+                  await onResetDefaults()
                   setConfirmResetModal(false)
                 }}
                 className="px-4 py-2 rounded text-xs font-semibold text-white bg-[#FF3B00] hover:bg-[#e03400] cursor-pointer"

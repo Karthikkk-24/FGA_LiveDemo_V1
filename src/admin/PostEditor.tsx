@@ -25,7 +25,7 @@ import { Article, ArticleSection, SlideItem } from '../types'
 
 interface PostEditorProps {
   initialArticle?: Article | null
-  onSave: (article: Article) => void
+  onSave: (article: Article) => void | Promise<void>
   onCancel: () => void
   onPreview: (article: Article) => void
 }
@@ -203,9 +203,9 @@ export function PostEditor({
     }
   }
 
-  const handleSave = (targetStatus: 'published' | 'draft') => {
+  const handleSave = async (targetStatus: 'published' | 'draft') => {
     const article = constructArticle(targetStatus)
-    onSave(article)
+    await onSave(article)
   }
 
   // --- Handlers for dynamic arrays ---

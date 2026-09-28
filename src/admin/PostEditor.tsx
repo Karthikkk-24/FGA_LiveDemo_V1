@@ -22,15 +22,15 @@ import {
   User
 } from 'lucide-react'
 import { Article, ArticleSection, SlideItem } from '../types'
+import { useTaxonomy } from '../taxonomyStorage'
+import { normalizeTagName } from '../taxonomy'
 
 interface PostEditorProps {
   initialArticle?: Article | null
-  onSave: (article: Article) => void
+  onSave: (article: Article) => void | Promise<void>
   onCancel: () => void
   onPreview: (article: Article) => void
 }
-
-const PRESET_CATEGORIES = ['PR Stunt', 'Celebrity', 'Sports', 'Brands', 'Business', 'Viral Campaign', 'Product Launch']
 
 export function PostEditor({
   initialArticle,
@@ -39,17 +39,16 @@ export function PostEditor({
   onPreview,
 }: PostEditorProps) {
   const isEditing = Boolean(initialArticle?.id)
+  const { categories, tags, ensureCategory, ensureTag, createCategory, createTag } = useTaxonomy()
 
   // Meta fields
   const [title, setTitle] = useState(initialArticle?.title || '')
   const [slug, setSlug] = useState(initialArticle?.id || '')
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEditing)
   const [summary, setSummary] = useState(initialArticle?.summary || '')
-  const [category, setCategory] = useState(initialArticle?.category || 'PR Stunt')
-  const [customCategory, setCustomCategory] = useState('')
-  const [isCustomCategory, setIsCustomCategory] = useState(
-    Boolean(initialArticle?.category && !PRESET_CATEGORIES.includes(initialArticle.category))
-  )
+  const [category, setCategory] = useState(initialArticle?.category || '')
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [showNewCategory, setShowNewCategory] = useState(false)
   const [readTime, setReadTime] = useState(initialArticle?.readTime || '5 min read')
   const [publishedDate, setPublishedDate] = useState(
     initialArticle?.publishedDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -57,7 +56,10 @@ export function PostEditor({
   const [heroImage, setHeroImage] = useState(
     initialArticle?.heroImage || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1600&h=900&fit=crop&auto=format'
   )
-  const [tagsInput, setTagsInput] = useState((initialArticle?.tags || ['#Marketing', '#Campaign']).join(', '))
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    (initialArticle?.tags || []).map(normalizeTagName).filter(Boolean)
+  )
+  const [newTagName, setNewTagName] = useState('')
   const [status, setStatus] = useState<'published' | 'draft'>(initialArticle?.status || 'published')
 
   // Author fields
@@ -168,12 +170,11 @@ export function PostEditor({
 
   // Build the complete Article object
   const constructArticle = (targetStatus?: 'published' | 'draft'): Article => {
-    const finalCategory = isCustomCategory ? (customCategory.trim() || 'Uncategorized') : category
-    const parsedTags = tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((t) => (t.startsWith('#') ? t : `#${t}`))
+    const finalCategory = category.trim() || categories[0]?.name || 'Uncategorized'
+    const parsedTags =
+      selectedTags.length > 0
+        ? selectedTags.map(normalizeTagName)
+        : ['#Advertising', '#Marketing']
 
     return {
       id: slug.trim() || `post-${Date.now()}`,
@@ -192,21 +193,58 @@ export function PostEditor({
         handle: authorHandle.trim(),
       },
       keyTakeaways: takeaways.filter((t) => t.trim().length > 0),
-      tags: parsedTags.length > 0 ? parsedTags : ['#Advertising', '#Marketing'],
+      tags: parsedTags,
       stats: stats.filter((s) => s.label.trim() && s.value.trim()),
       slides: slides.filter((s) => s.title.trim()),
       content: {
         intro: introText.split('\n\n').map((p) => p.trim()).filter(Boolean),
-        sections: sections.filter((s) => s.heading.trim()),
+        sections: sections
+          .filter((s) => s.heading.trim())
+          .map((s) => ({
+            ...s,
+            quote: s.quote?.text?.trim()
+              ? { text: s.quote.text.trim(), author: s.quote.author?.trim() || 'Campaign Insider' }
+              : undefined,
+            image: s.image?.url?.trim()
+              ? { url: s.image.url.trim(), caption: s.image.caption?.trim() || '' }
+              : undefined,
+            callout: s.callout?.trim() || undefined,
+            subheading: s.subheading?.trim() || undefined,
+          })),
         conclusion: conclusion.trim(),
       },
     }
   }
 
-  const handleSave = (targetStatus: 'published' | 'draft') => {
+  const handleSave = async (targetStatus: 'published' | 'draft') => {
+    setStatus(targetStatus)
     const article = constructArticle(targetStatus)
-    onSave(article)
+    try {
+      if (article.category) await ensureCategory(article.category)
+      for (const tag of article.tags) {
+        await ensureTag(tag)
+      }
+    } catch (e) {
+      console.warn('Taxonomy sync warning:', e)
+    }
+    await onSave(article)
   }
+
+  const toggleTag = (tagName: string) => {
+    const normalized = normalizeTagName(tagName)
+    setSelectedTags((prev) =>
+      prev.some((t) => t.toLowerCase() === normalized.toLowerCase())
+        ? prev.filter((t) => t.toLowerCase() !== normalized.toLowerCase())
+        : [...prev, normalized]
+    )
+  }
+
+  // Default category once taxonomy loads
+  useEffect(() => {
+    if (!category && categories.length > 0) {
+      setCategory(categories[0].name)
+    }
+  }, [categories, category])
 
   // --- Handlers for dynamic arrays ---
   // Stats
@@ -395,7 +433,7 @@ export function PostEditor({
                 URL Identifier / Slug <span className="text-[#FF3B00]">*</span>
               </label>
               <div className="flex items-center bg-[#141414] rounded border border-[#2A2A2A] px-3 py-2 text-xs font-mono text-[#666]">
-                <span>#article/</span>
+                <span>/article/</span>
                 <input
                   type="text"
                   value={slug}
@@ -423,60 +461,94 @@ export function PostEditor({
             </div>
           </div>
 
-          {/* Category Dropdown + Custom Category */}
+          {/* Category + Published Date (both always visible) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
                 Category
               </label>
               <select
-                value={isCustomCategory ? '__custom__' : category}
+                value={
+                  showNewCategory
+                    ? '__new__'
+                    : category && categories.some((c) => c.name === category)
+                      ? category
+                      : category
+                        ? '__legacy__'
+                        : ''
+                }
                 onChange={(e) => {
-                  if (e.target.value === '__custom__') {
-                    setIsCustomCategory(true)
-                  } else {
-                    setIsCustomCategory(false)
-                    setCategory(e.target.value)
+                  if (e.target.value === '__new__') {
+                    setShowNewCategory(true)
+                    return
                   }
+                  setShowNewCategory(false)
+                  setCategory(e.target.value === '__legacy__' ? category : e.target.value)
                 }}
                 className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none cursor-pointer"
               >
-                {PRESET_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
+                <option value="" disabled>
+                  Select a category…
+                </option>
+                {category && !categories.some((c) => c.name === category) && (
+                  <option value="__legacy__">{category} (from post)</option>
+                )}
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.name}
                   </option>
                 ))}
-                <option value="__custom__">+ Enter Custom Category...</option>
+                <option value="__new__">+ Create new category…</option>
               </select>
             </div>
 
-            {isCustomCategory ? (
-              <div>
+            <div>
+              <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
+                Published Date
+              </label>
+              <input
+                type="text"
+                value={publishedDate}
+                onChange={(e) => setPublishedDate(e.target.value)}
+                className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none"
+              />
+            </div>
+          </div>
+
+          {showNewCategory && (
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
                 <label className="block text-xs font-mono text-[#FF3B00] uppercase mb-1.5">
-                  Type Custom Category
+                  New Category Name
                 </label>
                 <input
                   type="text"
                   placeholder="e.g. Growth Hacking"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
                   className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#FF3B00]/40 focus:border-[#FF3B00] outline-none"
                 />
               </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
-                  Published Date
-                </label>
-                <input
-                  type="text"
-                  value={publishedDate}
-                  onChange={(e) => setPublishedDate(e.target.value)}
-                  className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none"
-                />
-              </div>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = newCategoryName.trim()
+                  if (!name) return
+                  try {
+                    const created = await createCategory(name)
+                    setCategory(created.name)
+                    setNewCategoryName('')
+                    setShowNewCategory(false)
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : 'Failed to create category')
+                  }
+                }}
+                className="px-4 py-2 rounded text-xs font-semibold bg-[#FF3B00] hover:bg-[#e03400] cursor-pointer"
+              >
+                Add
+              </button>
+            </div>
+          )}
 
           {/* Subtitle / Lead Hook */}
           <div>
@@ -526,18 +598,80 @@ export function PostEditor({
             )}
           </div>
 
-          {/* Tags */}
+          {/* Tags — multi-select from taxonomy */}
           <div>
             <label className="block text-xs font-mono text-[#888] uppercase mb-1.5">
-              Topic Tags (comma-separated)
+              Topic Tags
             </label>
-            <input
-              type="text"
-              placeholder="#Streetwear, #Nike, #Branding, #PRStunt"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              className="w-full px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none font-mono"
-            />
+            <div className="flex flex-wrap gap-1.5 mb-3 max-h-40 overflow-y-auto p-2 rounded border border-[#2A2A2A] bg-[#141414]">
+              {tags.length === 0 && (
+                <span className="text-xs text-[#666]">No tags yet — create one below.</span>
+              )}
+              {tags.map((tag) => {
+                const active = selectedTags.some(
+                  (t) => t.toLowerCase() === normalizeTagName(tag.name).toLowerCase()
+                )
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.name)}
+                    className="px-2.5 py-1 rounded text-[0.7rem] font-mono cursor-pointer transition-colors"
+                    style={{
+                      background: active ? 'rgba(255,59,0,0.18)' : '#1C1C1C',
+                      color: active ? '#FF3B00' : '#999',
+                      border: `1px solid ${active ? 'rgba(255,59,0,0.4)' : '#2A2A2A'}`,
+                    }}
+                  >
+                    {tag.name}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Create #NewTag and select it"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                className="flex-1 px-4 py-2 rounded bg-[#141414] text-xs sm:text-sm text-white border border-[#2A2A2A] focus:border-[#FF3B00] outline-none font-mono"
+                onKeyDown={async (e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  const name = normalizeTagName(newTagName)
+                  if (!name) return
+                  try {
+                    const created = await createTag(name)
+                    toggleTag(created.name)
+                    setNewTagName('')
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'Failed to create tag')
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = normalizeTagName(newTagName)
+                  if (!name) return
+                  try {
+                    const created = await createTag(name)
+                    toggleTag(created.name)
+                    setNewTagName('')
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'Failed to create tag')
+                  }
+                }}
+                className="px-3 py-2 rounded text-xs font-semibold bg-[#222] border border-[#333] hover:border-[#FF3B00] cursor-pointer"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            {selectedTags.length > 0 && (
+              <p className="mt-2 text-[0.7rem] font-mono text-[#666]">
+                Selected: {selectedTags.join(', ')}
+              </p>
+            )}
           </div>
         </section>
 
@@ -890,6 +1024,51 @@ export function PostEditor({
                     placeholder="e.g. Key Insight: Speed of cultural relevance consistently beats high-budget perfection."
                     className="w-full px-3 py-1.5 rounded bg-[#1F1F1F] text-xs text-neutral-200 border border-[#2A2A2A] outline-none"
                   />
+                </div>
+
+                {/* Optional Section Image */}
+                <div className="p-3.5 rounded bg-[#131313] border border-[#222] space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-mono text-[#888]">
+                    <ImageIcon size={13} className="text-[#FF3B00]" />
+                    <span>Section Image (Optional)</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={section.image?.url || ''}
+                    onChange={(e) =>
+                      handleUpdateSection(sIdx, {
+                        image: {
+                          url: e.target.value,
+                          caption: section.image?.caption || '',
+                        },
+                      })
+                    }
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full px-3 py-1.5 rounded bg-[#1B1B1B] text-xs text-white border border-[#282828] outline-none font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={section.image?.caption || ''}
+                    onChange={(e) =>
+                      handleUpdateSection(sIdx, {
+                        image: {
+                          url: section.image?.url || '',
+                          caption: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="Image caption"
+                    className="w-full px-3 py-1.5 rounded bg-[#1B1B1B] text-xs text-[#A0A0A0] border border-[#282828] outline-none"
+                  />
+                  {section.image?.url && (
+                    <div className="relative w-full aspect-video rounded overflow-hidden border border-[#262626] bg-[#141414]">
+                      <img
+                        src={section.image.url}
+                        alt={section.image.caption || 'Section preview'}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

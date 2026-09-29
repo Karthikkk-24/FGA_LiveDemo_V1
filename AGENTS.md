@@ -1,4 +1,4 @@
-# figma-make-app
+# finding-good-ads
 
 React + Vite + Tailwind CSS project running inside Figma Make.
 

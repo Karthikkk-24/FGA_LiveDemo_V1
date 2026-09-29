@@ -1,6 +1,9 @@
 {
   "title": "Finding Good Ads",
   "description": "Discover and explore curated advertising campaigns with detailed breakdowns, carousels, podcasts, and brand case studies in a sleek dark-themed UI.",
+  "icons": {
+    "icon": "/favicon.png"
+  },
   "robots": {
     "index": false
   },
